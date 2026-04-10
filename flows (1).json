@@ -1,0 +1,702 @@
+[
+    {
+        "id": "4143552214930ab5",
+        "type": "tab",
+        "label": "Nhà Kính Thông Minh - V2",
+        "disabled": false,
+        "info": ""
+    },
+    {
+        "id": "bf4f67119a9eb8c4",
+        "type": "mqtt in",
+        "z": "4143552214930ab5",
+        "name": "Nhận Cảm Biến",
+        "topic": "nhakinh/#",
+        "qos": "0",
+        "datatype": "json",
+        "broker": "39d7313b74401385",
+        "nl": false,
+        "rap": false,
+        "inputs": 0,
+        "x": 100,
+        "y": 580,
+        "wires": [
+            [
+                "6711bbf6906eca15",
+                "9760e1e3a5800d8c"
+            ]
+        ]
+    },
+    {
+        "id": "6711bbf6906eca15",
+        "type": "function",
+        "z": "4143552214930ab5",
+        "name": "Phân loại UI Dashboard",
+        "func": "// Lưu giá trị\nif (msg.topic === \"nhakinh/nhietdo\") flow.set('nhietdo', msg.payload);\nif (msg.topic === \"nhakinh/doam\") flow.set('doam', msg.payload);\nif (msg.topic === \"nhakinh/doamdat\") flow.set('doamdat', msg.payload);\nif (msg.topic === \"nhakinh/anhsang\") flow.set('anhsang', msg.payload);\nif (msg.topic === \"nhakinh/khigas\") flow.set('khigas', msg.payload);\n\n// Dashboard outputs\nvar outputs = [null, null, null, null, null, msg]; // output 6 luôn có msg\n\nif (msg.topic === \"nhakinh/nhietdo\") outputs[0] = msg;\nif (msg.topic === \"nhakinh/doam\") outputs[1] = msg;\nif (msg.topic === \"nhakinh/doamdat\") outputs[2] = msg;\nif (msg.topic === \"nhakinh/anhsang\") outputs[3] = msg;\nif (msg.topic === \"nhakinh/khigas\") outputs[4] = msg;\n\nreturn outputs;",
+        "outputs": 5,
+        "timeout": "",
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 370,
+        "y": 640,
+        "wires": [
+            [
+                "f04062137629e1fe"
+            ],
+            [
+                "b8921d58d7aa3a84"
+            ],
+            [
+                "f2ac9287951e470a"
+            ],
+            [
+                "3e18659112760e2f"
+            ],
+            [
+                "ee7c239b5608734f"
+            ]
+        ]
+    },
+    {
+        "id": "9760e1e3a5800d8c",
+        "type": "function",
+        "z": "4143552214930ab5",
+        "name": "HỆ THỐNG CẢNH BÁO",
+        "func": "// 1. Kiểm tra kích hoạt cảnh báo\nvar alertEnabled = flow.get('alertEnabled');\nif (alertEnabled === undefined) {\n    alertEnabled = \"1\";\n    flow.set('alertEnabled', \"1\");\n}\n\nif (alertEnabled !== \"1\" && alertEnabled !== true) {\n    return null; \n}\n\n// 2. Kiểm tra topic\nvar topic = msg.topic;\nif (!topic) {\n    node.warn(\"Lỗi dữ liệu: Không có msg.topic!\");\n    return null;\n}\n\ntopic = topic.trim();\n\n// 3. LẤY GIÁ TRỊ (HỖ TRỢ CẢ OBJECT + NUMBER)\nvar val;\n\nif (typeof msg.payload === \"object\") {\n    // Payload dạng JSON\n    switch (topic) {\n        case \"nhakinh/nhietdo\":\n            val = msg.payload.temp;\n            break;\n        case \"nhakinh/khigas\":\n            val = msg.payload.gas;\n            break;\n        case \"nhakinh/doamdat\":\n            val = msg.payload.soil;\n            break;\n        case \"nhakinh/anhsang\":\n            val = msg.payload.light;\n            break;\n        default:\n            return null;\n    }\n} else {\n    // Payload dạng số/string\n    val = parseFloat(msg.payload);\n}\n\n// 4. Kiểm tra hợp lệ\nif (val === undefined || isNaN(val)) {\n    node.warn(\"Lỗi dữ liệu: Không tìm thấy giá trị hợp lệ! Payload: \" + JSON.stringify(msg.payload));\n    return null;\n}\n\nvar chat_id = \"6261296935\";\n\n// 5. Trạng thái cảnh báo\nvar wasAlerting = flow.get('isAlerting_' + topic) || false;\nvar isNowAlerting = false;\nvar alertMsg = \"\";\nvar safeMsg = \"\";\n\n// 6. Logic cảnh báo\nswitch (topic) {\n    case \"nhakinh/nhietdo\":\n        if (val > 35) { \n            isNowAlerting = true; \n            alertMsg = \"⚠️ **CẢNH BÁO:** Nhiệt độ quá CAO (`\" + val + \"°C`). Hãy bật Quạt/Bơm!\"; \n        } else if (val < 18) { \n            isNowAlerting = true; \n            alertMsg = \"❄️ **CẢNH BÁO:** Nhiệt độ quá THẤP (`\" + val + \"°C`). Hãy bật Sưởi!\"; \n        }\n        safeMsg = \"✅ Nhiệt độ đã trở lại mức an toàn (`\" + val + \"°C`).\";\n        break;\n\n    case \"nhakinh/khigas\":\n        if (val > 2000) { \n            isNowAlerting = true; \n            alertMsg = \"💨 **NGUY HIỂM:** Nồng độ Gas cao (`\" + val + \" PPM`). Hãy bật Quạt ngay!\"; \n        }\n        safeMsg = \"✅ Nồng độ Gas đã giảm về mức an toàn (`\" + val + \" PPM`).\";\n        break;\n\n    case \"nhakinh/doamdat\":\n        if (val < 30) { \n            isNowAlerting = true; \n            alertMsg = \"💧 **CẢNH BÁO:** Đất quá khô (`\" + val + \"%`). Hãy bật Bơm!\"; \n        }\n        safeMsg = \"✅ Độ ẩm đất đã đủ (`\" + val + \"%`).\";\n        break;\n\n    case \"nhakinh/anhsang\":\n        if (val > 80) { \n            isNowAlerting = true; \n            alertMsg = \"☀️ **CẢNH BÁO:** Nắng quá gắt (`\" + val + \"%`). Hãy kéo lưới che!\"; \n        }\n        safeMsg = \"✅ Cường độ ánh sáng đã dịu lại (`\" + val + \"%`).\";\n        break;\n\n    default:\n        return null;\n}\n\n// 7. Gửi Telegram khi trạng thái thay đổi\nif (isNowAlerting && !wasAlerting) {\n    flow.set('isAlerting_' + topic, true);\n    msg.payload = { \n        chatId: chat_id, \n        type: \"message\", \n        content: alertMsg,\n        options: { parse_mode: \"Markdown\" } \n    };\n    return msg;\n} \nelse if (!isNowAlerting && wasAlerting) {\n    flow.set('isAlerting_' + topic, false);\n    msg.payload = { \n        chatId: chat_id, \n        type: \"message\", \n        content: safeMsg,\n        options: { parse_mode: \"Markdown\" } \n    };\n    return msg;\n}\n\nreturn null;",
+        "outputs": 1,
+        "timeout": "",
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 370,
+        "y": 500,
+        "wires": [
+            [
+                "1956e5c52ef4b6b4"
+            ]
+        ]
+    },
+    {
+        "id": "8bc955133c3e4d26",
+        "type": "telegram receiver",
+        "z": "4143552214930ab5",
+        "name": "Nhận Lệnh Telegram",
+        "bot": "80eb64c8acf3cd6c",
+        "saveDataDir": "",
+        "filterCommands": false,
+        "hasinput": false,
+        "inputs": 0,
+        "handleallupdates": false,
+        "handleprocessupdates": false,
+        "x": 110,
+        "y": 340,
+        "wires": [
+            [
+                "f23cc8604e72bb45"
+            ],
+            []
+        ]
+    },
+    {
+        "id": "f23cc8604e72bb45",
+        "type": "function",
+        "z": "4143552214930ab5",
+        "name": "Dịch Lệnh & Menu Telegram",
+        "func": "var type = msg.payload.type;\nvar content = msg.payload.content;\nvar chatId = msg.payload.chatId;\n\n// 1. KIỂM TRA VÀ BẬT CẢNH BÁO MẶC ĐỊNH\nvar ae = flow.get('alertEnabled');\nif (ae === undefined) {\n    flow.set('alertEnabled', \"1\");\n    ae = \"1\";\n}\n\n// 6 ngõ ra: Quạt [0], Bơm [1], Sưởi [2], Lưới [3], Cảnh báo [4], Tele reply [5]\nvar out = [null, null, null, null, null, null]; \n\n// Lấy dữ liệu cảm biến từ flow (Phải đảm bảo đã lưu ở node Phân loại trước đó)\nvar nhietdo = flow.get('nhietdo') || \"--\";\nvar doam = flow.get('doam') || \"--\";\nvar doamdat = flow.get('doamdat') || \"--\";\nvar anhsang = flow.get('anhsang') || \"--\";\nvar khigas = flow.get('khigas') || \"--\";\n\n// 2. XỬ LÝ LỖI HIỂN THỊ TRẠNG THÁI CẢNH BÁO\n// Bao trọn các kiểu dữ liệu: số 1, chữ \"1\", boolean true, chữ \"true\"\nvar alertState = (ae === \"1\" || ae === 1 || ae === true || ae === \"true\") ? \"🟢 ĐANG BẬT\" : \"🔴 ĐANG TẮT\";\n\n// Hàm điều khiển thiết bị và xuất thông báo phản hồi\nfunction setControl(index, state, name) {\n    out[index] = { payload: state };\n    \n    // Kiểm tra bao trọn các kiểu dữ liệu trạng thái để xuất thông báo chuẩn\n    var isON = (state === \"1\" || state === 1 || state === true || state === \"true\");\n    var statusMsg = isON ? \"✅ Đã BẬT \" + name : \"🔴 Đã TẮT \" + name;\n    \n    out[5] = { payload: { type: \"message\", chatId: chatId, content: statusMsg } };\n}\n\n// 3. DỰNG KHUNG VĂN BẢN HIỂN THỊ THÔNG SỐ CHUNG\nvar statusText = \"🌿 **TRẠNG THÁI NHÀ KÍNH** 🌿\\n\";\nstatusText += \"━━━━━━━━━━━━━\\n\";\nstatusText += \"🌡 Nhiệt độ: `\" + nhietdo + \"°C`\\n\";\nstatusText += \"💧 Độ ẩm khí: `\" + doam + \"%`\\n\";\nstatusText += \"🌱 Độ ẩm đất: `\" + doamdat + \"%`\\n\";\nstatusText += \"☀️ Ánh sáng: `\" + anhsang + \"%`\\n\";\nstatusText += \"💨 Khí Gas: `\" + khigas + \" PPM`\\n\";\nstatusText += \"🔔 Cảnh báo tự động: **\" + alertState + \"**\\n\";\nstatusText += \"━━━━━━━━━━━━━\\n\";\n\n// 4. XỬ LÝ LOGIC LỆNH (MENU, STATUS, HOẶC NÚT BẤM)\nif (content === '/menu' || content === '/start') {\n    // Lệnh Menu/Start -> Gửi thông số + Bảng điều khiển thiết bị\n    var menuText = statusText + \"👇 **BẢNG ĐIỀU KHIỂN**\";\n    out[5] = {\n        payload: {\n            type: \"message\",\n            chatId: chatId,\n            content: menuText,\n            options: {\n                parse_mode: \"Markdown\",\n                reply_markup: JSON.stringify({\n                    inline_keyboard: [\n                        [{text: \"🔄 Cập nhật thông số\", callback_data: \"status\"}],\n                        [{text: \"🌬 Quạt: Bật\", callback_data: \"quat_1\"}, {text: \"🛑 Tắt\", callback_data: \"quat_0\"}],\n                        [{text: \"💧 Bơm: Bật\", callback_data: \"bom_1\"}, {text: \"🛑 Tắt\", callback_data: \"bom_0\"}],\n                        [{text: \"🔥 Sưởi: Bật\", callback_data: \"suoi_1\"}, {text: \"🛑 Tắt\", callback_data: \"suoi_0\"}],\n                        [{text: \"🌤 Lưới: Kéo\", callback_data: \"luoi_1\"}, {text: \"🛑 Thu\", callback_data: \"luoi_0\"}],\n                        [{text: \"🔔 BẬT Cảnh báo\", callback_data: \"alert_1\"}, {text: \"🔕 TẮT Cảnh báo\", callback_data: \"alert_0\"}]\n                    ]\n                })\n            }\n        }\n    };\n} \nelse if (content === '/status' || content === 'status') {\n    // Lệnh Status -> Chỉ gửi thông số, có nút Cập nhật lại\n    out[5] = {\n        payload: {\n            type: \"message\",\n            chatId: chatId,\n            content: statusText,\n            options: {\n                parse_mode: \"Markdown\",\n                reply_markup: JSON.stringify({\n                    inline_keyboard: [\n                        [{text: \"🔄 Cập nhật lại\", callback_data: \"status\"}]\n                    ]\n                })\n            }\n        }\n    };\n} \nelse {\n    var cmd = content;\n    \n    // Xử lý các lệnh điều khiển từ nút bấm\n    if (cmd === \"/quat_on\" || cmd === \"quat_1\") setControl(0, \"1\", \"Quạt\");\n    else if (cmd === \"/quat_off\" || cmd === \"quat_0\") setControl(0, \"0\", \"Quạt\");\n    \n    else if (cmd === \"/bom_on\" || cmd === \"bom_1\") setControl(1, \"1\", \"Bơm\");\n    else if (cmd === \"/bom_off\" || cmd === \"bom_0\") setControl(1, \"0\", \"Bơm\");\n    \n    else if (cmd === \"/suoi_on\" || cmd === \"suoi_1\") setControl(2, \"1\", \"Sưởi\");\n    else if (cmd === \"/suoi_off\" || cmd === \"suoi_0\") setControl(2, \"0\", \"Sưởi\");\n    \n    else if (cmd === \"/luoi_on\" || cmd === \"luoi_1\") setControl(3, \"1\", \"Lưới\");\n    else if (cmd === \"/luoi_off\" || cmd === \"luoi_0\") setControl(3, \"0\", \"Lưới\");\n    \n    // Cập nhật đồng bộ biến alertEnabled khi bấm Cảnh Báo\n    else if (cmd === \"/alert_on\" || cmd === \"alert_1\") {\n        flow.set('alertEnabled', \"1\");\n        setControl(4, \"1\", \"Hệ Thống Cảnh Báo\");\n    }\n    else if (cmd === \"/alert_off\" || cmd === \"alert_0\") {\n        flow.set('alertEnabled', \"0\");\n        setControl(4, \"0\", \"Hệ Thống Cảnh Báo\");\n    }\n}\n\nreturn out;",
+        "outputs": 6,
+        "timeout": "",
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 380,
+        "y": 340,
+        "wires": [
+            [
+                "37038be37c4fbe38"
+            ],
+            [
+                "a877b11a58c1b2a5"
+            ],
+            [
+                "ae979cc211ed717e"
+            ],
+            [
+                "22d28c36782fc599"
+            ],
+            [
+                "f96df1b658ee0e68"
+            ],
+            [
+                "1956e5c52ef4b6b4"
+            ]
+        ]
+    },
+    {
+        "id": "37038be37c4fbe38",
+        "type": "ui_switch",
+        "z": "4143552214930ab5",
+        "name": "UI Quạt",
+        "label": "Quạt Thông Gió",
+        "tooltip": "",
+        "group": "f04ea83cc4e1b9fa",
+        "order": 1,
+        "width": 6,
+        "height": 1,
+        "passthru": true,
+        "decouple": "false",
+        "topic": "nhakinh/dieukhien/quat",
+        "topicType": "str",
+        "onvalue": "1",
+        "onvalueType": "str",
+        "onicon": "",
+        "oncolor": "",
+        "offvalue": "0",
+        "offvalueType": "str",
+        "officon": "",
+        "offcolor": "",
+        "animate": true,
+        "className": "",
+        "x": 700,
+        "y": 100,
+        "wires": [
+            [
+                "5ecd07ef65f9f47f",
+                "77a9a6adcd13dd01"
+            ]
+        ]
+    },
+    {
+        "id": "a877b11a58c1b2a5",
+        "type": "ui_switch",
+        "z": "4143552214930ab5",
+        "name": "UI Bơm",
+        "label": "Máy Bơm Nước",
+        "tooltip": "",
+        "group": "f04ea83cc4e1b9fa",
+        "order": 2,
+        "width": 6,
+        "height": 1,
+        "passthru": true,
+        "decouple": "false",
+        "topic": "nhakinh/dieukhien/bom",
+        "topicType": "str",
+        "onvalue": "1",
+        "onvalueType": "str",
+        "onicon": "",
+        "oncolor": "",
+        "offvalue": "0",
+        "offvalueType": "str",
+        "officon": "",
+        "offcolor": "",
+        "animate": true,
+        "className": "",
+        "x": 680,
+        "y": 160,
+        "wires": [
+            [
+                "75e08c828e4b5a80",
+                "77a9a6adcd13dd01"
+            ]
+        ]
+    },
+    {
+        "id": "ae979cc211ed717e",
+        "type": "ui_switch",
+        "z": "4143552214930ab5",
+        "name": "UI Sưởi",
+        "label": "Máy Sưởi",
+        "tooltip": "",
+        "group": "f04ea83cc4e1b9fa",
+        "order": 3,
+        "width": 6,
+        "height": 1,
+        "passthru": true,
+        "decouple": "false",
+        "topic": "nhakinh/dieukhien/suoi",
+        "topicType": "str",
+        "onvalue": "1",
+        "onvalueType": "str",
+        "onicon": "",
+        "oncolor": "",
+        "offvalue": "0",
+        "offvalueType": "str",
+        "officon": "",
+        "offcolor": "",
+        "animate": true,
+        "className": "",
+        "x": 680,
+        "y": 220,
+        "wires": [
+            [
+                "5982f6c93454cd01",
+                "77a9a6adcd13dd01"
+            ]
+        ]
+    },
+    {
+        "id": "22d28c36782fc599",
+        "type": "ui_switch",
+        "z": "4143552214930ab5",
+        "name": "UI Lưới",
+        "label": "Lưới Che Nắng",
+        "tooltip": "",
+        "group": "f04ea83cc4e1b9fa",
+        "order": 4,
+        "width": 6,
+        "height": 1,
+        "passthru": true,
+        "decouple": "false",
+        "topic": "nhakinh/dieukhien/luoi",
+        "topicType": "str",
+        "onvalue": "1",
+        "onvalueType": "str",
+        "onicon": "",
+        "oncolor": "",
+        "offvalue": "0",
+        "offvalueType": "str",
+        "officon": "",
+        "offcolor": "",
+        "animate": true,
+        "className": "",
+        "x": 680,
+        "y": 280,
+        "wires": [
+            [
+                "8d89c7459105a001",
+                "77a9a6adcd13dd01"
+            ]
+        ]
+    },
+    {
+        "id": "f96df1b658ee0e68",
+        "type": "ui_switch",
+        "z": "4143552214930ab5",
+        "name": "UI Bật/Tắt Cảnh Báo",
+        "label": "Nhận Thông Báo",
+        "tooltip": "Tắt để dừng gửi cảnh báo về Telegram",
+        "group": "f04ea83cc4e1b9fa",
+        "order": 5,
+        "width": 6,
+        "height": 1,
+        "passthru": true,
+        "decouple": "false",
+        "topic": "nhakinh/dieukhien/canhbao",
+        "topicType": "str",
+        "onvalue": "1",
+        "onvalueType": "str",
+        "onicon": "notifications_active",
+        "oncolor": "green",
+        "offvalue": "0",
+        "offvalueType": "str",
+        "officon": "notifications_off",
+        "offcolor": "red",
+        "animate": true,
+        "className": "",
+        "x": 700,
+        "y": 340,
+        "wires": [
+            [
+                "4adca001d3f98733",
+                "77a9a6adcd13dd01"
+            ]
+        ]
+    },
+    {
+        "id": "8aaf2acb0e67f840",
+        "type": "inject",
+        "z": "4143552214930ab5",
+        "name": "Bật Cảnh Báo Mặc Định",
+        "props": [
+            {
+                "p": "payload"
+            }
+        ],
+        "repeat": "",
+        "crontab": "",
+        "once": true,
+        "onceDelay": 0.1,
+        "topic": "",
+        "payload": "1",
+        "payloadType": "str",
+        "x": 390,
+        "y": 420,
+        "wires": [
+            [
+                "f96df1b658ee0e68"
+            ]
+        ]
+    },
+    {
+        "id": "4adca001d3f98733",
+        "type": "function",
+        "z": "4143552214930ab5",
+        "name": "Lưu Trạng Thái Alert",
+        "func": "// Lưu vào global flow biến bật/tắt cảnh báo\nflow.set('alertEnabled', msg.payload === \"1\" || msg.payload === true);\nreturn null;",
+        "outputs": 1,
+        "timeout": "",
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 1020,
+        "y": 400,
+        "wires": [
+            []
+        ]
+    },
+    {
+        "id": "77a9a6adcd13dd01",
+        "type": "function",
+        "z": "4143552214930ab5",
+        "name": "Báo cáo UI -> Tele",
+        "func": "// 1. CHẶN THÔNG BÁO NẾU LỆNH ĐẾN TỪ TELEGRAM\n// Chỉ thao tác trên Web UI mới có msg.socketid\nif (!msg.socketid) {\n    return null; \n}\n\n// 2. PHẦN CODE XỬ LÝ THÔNG BÁO TỪ DASHBOARD VỀ TELEGRAM\nvar chat_id = \"6261296935\"; \n\nvar deviceName = \"\";\nvar state = (msg.payload === \"1\" || msg.payload === true) ? \"BẬT ✅\" : \"TẮT 🔴\";\n\nswitch(msg.topic) {\n    case \"nhakinh/dieukhien/quat\": \n        deviceName = \"Quạt thông gió\"; \n        break;\n    case \"nhakinh/dieukhien/bom\": \n        deviceName = \"Máy bơm nước\"; \n        break;\n    case \"nhakinh/dieukhien/suoi\": \n        deviceName = \"Máy sưởi\"; \n        break;\n    case \"nhakinh/dieukhien/luoi\": \n        deviceName = \"Lưới che nắng\"; \n        break;\n    case \"nhakinh/dieukhien/canhbao\": \n        deviceName = \"Hệ thống cảnh báo tự động\"; \n        break;\n    default: \n        deviceName = \"Thiết bị chưa xác định (\" + msg.topic + \")\";\n}\n\nvar alertMsg = \"📱 **[DASHBOARD]** \" + deviceName + \" vừa được **\" + state + \"**.\";\n\nmsg.payload = {\n    chatId: chat_id,\n    type: \"message\",\n    content: alertMsg,\n    options: { parse_mode: \"Markdown\" } \n};\n\nreturn msg;",
+        "outputs": 1,
+        "timeout": "",
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 1010,
+        "y": 340,
+        "wires": [
+            [
+                "1956e5c52ef4b6b4"
+            ]
+        ]
+    },
+    {
+        "id": "5ecd07ef65f9f47f",
+        "type": "mqtt out",
+        "z": "4143552214930ab5",
+        "name": "Gửi Lệnh Quạt",
+        "topic": "nhakinh/dieukhien/quat",
+        "qos": "0",
+        "retain": "false",
+        "respTopic": "",
+        "contentType": "",
+        "userProps": "",
+        "correl": "",
+        "expiry": "",
+        "broker": "39d7313b74401385",
+        "x": 980,
+        "y": 100,
+        "wires": []
+    },
+    {
+        "id": "75e08c828e4b5a80",
+        "type": "mqtt out",
+        "z": "4143552214930ab5",
+        "name": "Gửi Lệnh Bơm",
+        "topic": "nhakinh/dieukhien/bom",
+        "qos": "0",
+        "retain": "false",
+        "respTopic": "",
+        "contentType": "",
+        "userProps": "",
+        "correl": "",
+        "expiry": "",
+        "broker": "39d7313b74401385",
+        "x": 980,
+        "y": 160,
+        "wires": []
+    },
+    {
+        "id": "5982f6c93454cd01",
+        "type": "mqtt out",
+        "z": "4143552214930ab5",
+        "name": "Gửi Lệnh Sưởi",
+        "topic": "nhakinh/dieukhien/suoi",
+        "qos": "0",
+        "retain": "false",
+        "respTopic": "",
+        "contentType": "",
+        "userProps": "",
+        "correl": "",
+        "expiry": "",
+        "broker": "39d7313b74401385",
+        "x": 980,
+        "y": 220,
+        "wires": []
+    },
+    {
+        "id": "8d89c7459105a001",
+        "type": "mqtt out",
+        "z": "4143552214930ab5",
+        "name": "Gửi Lệnh Lưới",
+        "topic": "nhakinh/dieukhien/luoi",
+        "qos": "0",
+        "retain": "false",
+        "respTopic": "",
+        "contentType": "",
+        "userProps": "",
+        "correl": "",
+        "expiry": "",
+        "broker": "39d7313b74401385",
+        "x": 980,
+        "y": 280,
+        "wires": []
+    },
+    {
+        "id": "1956e5c52ef4b6b4",
+        "type": "telegram sender",
+        "z": "4143552214930ab5",
+        "name": "Gửi Telegram",
+        "bot": "80eb64c8acf3cd6c",
+        "haserroroutput": false,
+        "outputs": 1,
+        "x": 1280,
+        "y": 460,
+        "wires": [
+            []
+        ]
+    },
+    {
+        "id": "f04062137629e1fe",
+        "type": "ui_gauge",
+        "z": "4143552214930ab5",
+        "name": "",
+        "group": "14c36476046f2aaf",
+        "order": 1,
+        "width": 3,
+        "height": 3,
+        "gtype": "gage",
+        "title": "Nhiệt độ",
+        "label": "°C",
+        "format": "{{value}}",
+        "min": 0,
+        "max": "60",
+        "colors": [
+            "#00b500",
+            "#e6e600",
+            "#ca3838"
+        ],
+        "seg1": "",
+        "seg2": "",
+        "diff": false,
+        "className": "",
+        "x": 740,
+        "y": 520,
+        "wires": []
+    },
+    {
+        "id": "b8921d58d7aa3a84",
+        "type": "ui_gauge",
+        "z": "4143552214930ab5",
+        "name": "",
+        "group": "14c36476046f2aaf",
+        "order": 2,
+        "width": 3,
+        "height": 3,
+        "gtype": "gage",
+        "title": "Độ ẩm",
+        "label": "%",
+        "format": "{{value}}",
+        "min": 0,
+        "max": "100",
+        "colors": [
+            "#ca3838",
+            "#00b500",
+            "#0053b5"
+        ],
+        "seg1": "",
+        "seg2": "",
+        "className": "",
+        "x": 750,
+        "y": 560,
+        "wires": []
+    },
+    {
+        "id": "f2ac9287951e470a",
+        "type": "ui_gauge",
+        "z": "4143552214930ab5",
+        "name": "",
+        "group": "14c36476046f2aaf",
+        "order": 3,
+        "width": 3,
+        "height": 3,
+        "gtype": "gage",
+        "title": "Ẩm Đất",
+        "label": "%",
+        "format": "{{value}}",
+        "min": 0,
+        "max": "100",
+        "colors": [
+            "#ca3838",
+            "#e6e600",
+            "#00b500"
+        ],
+        "seg1": "",
+        "seg2": "",
+        "className": "",
+        "x": 740,
+        "y": 600,
+        "wires": []
+    },
+    {
+        "id": "3e18659112760e2f",
+        "type": "ui_gauge",
+        "z": "4143552214930ab5",
+        "name": "",
+        "group": "14c36476046f2aaf",
+        "order": 4,
+        "width": 3,
+        "height": 3,
+        "gtype": "gage",
+        "title": "Ánh sáng",
+        "label": "%",
+        "format": "{{value}}",
+        "min": 0,
+        "max": "100",
+        "colors": [
+            "#5c5c5c",
+            "#e6e600",
+            "#ffea00"
+        ],
+        "seg1": "",
+        "seg2": "",
+        "className": "",
+        "x": 740,
+        "y": 640,
+        "wires": []
+    },
+    {
+        "id": "ee7c239b5608734f",
+        "type": "ui_gauge",
+        "z": "4143552214930ab5",
+        "name": "",
+        "group": "14c36476046f2aaf",
+        "order": 5,
+        "width": 6,
+        "height": 3,
+        "gtype": "gage",
+        "title": "Khí Gas",
+        "label": "PPM",
+        "format": "{{value}}",
+        "min": 0,
+        "max": "4095",
+        "colors": [
+            "#00b500",
+            "#e6e600",
+            "#ca3838"
+        ],
+        "seg1": "",
+        "seg2": "",
+        "className": "",
+        "x": 740,
+        "y": 700,
+        "wires": []
+    },
+    {
+        "id": "39d7313b74401385",
+        "type": "mqtt-broker",
+        "name": "HiveMQ Public",
+        "broker": "1f0371b23315492aa7bf3e6396a835d3.s1.eu.hivemq.cloud",
+        "port": "8883",
+        "tls": "4cb30c4f55c6b2c7",
+        "clientid": "",
+        "autoConnect": true,
+        "usetls": true,
+        "protocolVersion": "4",
+        "keepalive": "60",
+        "cleansession": true,
+        "autoUnsubscribe": true,
+        "birthTopic": "",
+        "birthQos": "0",
+        "birthPayload": "",
+        "birthMsg": {},
+        "closeTopic": "",
+        "closeQos": "0",
+        "closePayload": "",
+        "closeMsg": {},
+        "willTopic": "",
+        "willQos": "0",
+        "willPayload": "",
+        "willMsg": {},
+        "userProps": "",
+        "sessionExpiry": ""
+    },
+    {
+        "id": "80eb64c8acf3cd6c",
+        "type": "telegram bot",
+        "botname": "IOT Fire alert",
+        "usernames": "",
+        "chatids": "6261296935",
+        "baseapiurl": "",
+        "testenvironment": false,
+        "updatemode": "polling",
+        "pollinterval": "300",
+        "usesocks": false,
+        "sockshost": "",
+        "socksport": "1080",
+        "socksusername": "anonymous",
+        "sockspassword": "",
+        "bothost": "",
+        "botpath": "",
+        "localbothost": "",
+        "localbotport": "8443",
+        "publicbotport": "8443",
+        "privatekey": "",
+        "certificate": "",
+        "useselfsignedcertificate": false,
+        "sslterminated": false,
+        "verboselogging": false
+    },
+    {
+        "id": "f04ea83cc4e1b9fa",
+        "type": "ui_group",
+        "name": "Điều khiển Thiết bị",
+        "tab": "1c540e7fc6ba8400",
+        "order": 2,
+        "disp": true,
+        "width": 6,
+        "collapse": false,
+        "className": ""
+    },
+    {
+        "id": "14c36476046f2aaf",
+        "type": "ui_group",
+        "name": "Dữ liệu Cảm biến",
+        "tab": "1c540e7fc6ba8400",
+        "order": 1,
+        "disp": true,
+        "width": 6,
+        "collapse": false,
+        "className": ""
+    },
+    {
+        "id": "4cb30c4f55c6b2c7",
+        "type": "tls-config",
+        "name": "",
+        "cert": "",
+        "key": "",
+        "ca": "",
+        "certname": "",
+        "keyname": "",
+        "caname": "",
+        "servername": "",
+        "verifyservercert": false,
+        "alpnprotocol": ""
+    },
+    {
+        "id": "1c540e7fc6ba8400",
+        "type": "ui_tab",
+        "name": "Giám sát Nhà Kính",
+        "icon": "dashboard",
+        "order": 1,
+        "disabled": false,
+        "hidden": false
+    },
+    {
+        "id": "88f847c4ad8d45fa",
+        "type": "global-config",
+        "env": [],
+        "modules": {
+            "node-red-contrib-telegrambot": "17.1.3",
+            "node-red-dashboard": "3.6.6"
+        }
+    }
+]
